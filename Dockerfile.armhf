@@ -8,6 +8,8 @@ ARG SABNZBD_VERSION
 LABEL build_version="Linuxserver.io version:- ${VERSION} Build-date:- ${BUILD_DATE}"
 LABEL maintainer="thespad"
 
+HEALTHCHECK CMD [ $(( $(date -u +%s) - $(wg show wg0 latest-handshakes | awk '{print $2}') )) -le 120 ] || exit 1
+
 # environment settings
 ENV HOME="/config" \
 PYTHONIOENCODING=utf-8
@@ -24,22 +26,25 @@ RUN \
     python3-dev && \
   apk add  -U --update --no-cache \
     curl \
+    jq \
     p7zip \
     par2cmdline \
+    patch \
+    py3-pip \
     python3 \
-    py3-pip && \
+    wireguard-tools && \
   echo "**** install unrar from source ****" && \
   mkdir /tmp/unrar && \
   curl -o \
     /tmp/unrar.tar.gz -L \
-    "https://www.rarlab.com/rar/unrarsrc-${UNRAR_VERSION}.tar.gz" && \  
+    "https://www.rarlab.com/rar/unrarsrc-${UNRAR_VERSION}.tar.gz" && \
   tar xf \
     /tmp/unrar.tar.gz -C \
     /tmp/unrar --strip-components=1 && \
   cd /tmp/unrar && \
   make && \
   install -v -m755 unrar /usr/local/bin && \
-  echo "**** install sabnzbd ****" && \  
+  echo "**** install sabnzbd ****" && \
   if [ -z ${SABNZBD_VERSION+x} ]; then \
     SABNZBD_VERSION=$(curl -s https://api.github.com/repos/sabnzbd/sabnzbd/releases/latest \
       | awk '/tag_name/{print $4;exit}' FS='[""]'); \
@@ -59,7 +64,7 @@ RUN \
     pynzb \
     requests && \
   pip3 install -U --no-cache-dir --find-links https://wheel-index.linuxserver.io/alpine-3.16/ -r requirements.txt && \
-  echo "**** install nzb-notify ****" && \   
+  echo "**** install nzb-notify ****" && \
   NZBNOTIFY_VERSION=$(curl -s https://api.github.com/repos/caronc/nzb-notify/releases/latest \
     | awk '/tag_name/{print $4;exit}' FS='[""]') && \
   mkdir -p /app/nzbnotify && \
@@ -70,7 +75,7 @@ RUN \
     /tmp/nzbnotify.tar.gz -C \
     /app/nzbnotify --strip-components=1 && \
   cd /app/nzbnotify && \
-  pip3 install -U --no-cache-dir --find-links https://wheel-index.linuxserver.io/alpine-3.16/ -r requirements.txt && \  
+  pip3 install -U --no-cache-dir --find-links https://wheel-index.linuxserver.io/alpine-3.16/ -r requirements.txt && \
   echo "**** cleanup ****" && \
   ln -s \
     /usr/bin/python3 \
@@ -83,6 +88,11 @@ RUN \
 
 # add local files
 COPY root/ /
+
+RUN \
+  patch --verbose -d / -p 0 -i /patch/wg-quick.patch && \
+  apk del --purge patch && \
+	rm -rf /tmp/* /patch
 
 # ports and volumes
 EXPOSE 8080
